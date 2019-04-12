@@ -5,12 +5,15 @@ Clustering is one of the research hotspots of deep learning. Recently, deep gene
 
 ## Comparison
 .<img src="https://github.com/wusongyuan/ACOL-GAN/blob/master/ACOL-GAN/rs_image/acc.png"/>
+
 The ACOL-GAN algorithm was compared to the most advanced clustering methods. As shown in Table 1, the ACOL-GAN clustering algorithm is better than or equal to other algorithms in most cases, and the performance on the Fashion-MNIST dataset is the best in the recorded algorithm clustering results. 
 
 ## Visualization
 .<img src="https://github.com/wusongyuan/ACOL-GAN/blob/master/ACOL-GAN/rs_image/visualization.png"/>
+
 The latent representation of the MNIST data set is visualized by t-SNE[5]. ACOL-GAN can quickly capture the data distribution of the MNIST dataset in the latent space and make the actual data to fit the specified Gaussian mixture for fast clustering. And only 5 epochs are needed to achieve different boundaries in the latent space. 
 
 ## Convergence curve
 .<img src="https://github.com/wusongyuan/ACOL-GAN/blob/master/ACOL-GAN/rs_image/acc.png"/>
+
 The clustering accuracy curve of MNIST dataset increases rapidly, reaching more than 90% with just 10 epochs. This shows that the ACOL-GAN model can converge quickly, and the advantages of the k manifold model. Moreover, ACOL-GAN is no need for pre-training and the convergence speed is faster and the accuracy is higher compared with other clustering models. 

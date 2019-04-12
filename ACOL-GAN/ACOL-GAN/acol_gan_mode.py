@@ -13,7 +13,7 @@ from keras.preprocessing.image import ImageDataGenerator
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-class WGAN():
+class ACOL_GAN():
 
     def __init__(self, opts):
         config = tf.ConfigProto()
@@ -30,13 +30,9 @@ class WGAN():
         self.encoded_r = self.encoder(opts, inputs=self.sample_points_r,reuse=True)
         self.re_sample_points_r = self.decoder(opts, self.encoded_r,reuse=True)
 
-        self.sample_noise_1, self.limit_1 = self.add_sample(self.choise_list_1)
+        self.sample_noise_1, self.limit_1 = self.add_sample(self.choise_list)
         self.generated = self.decoder(opts, self.sample_noise_1, True)
         self.re_sample_noise = self.encoder(opts, self.generated, reuse = True)
-
-        # self.datagen_30 = ImageDataGenerator(width_shift_range=0.1, height_shift_range=0.1, rotation_range=30)
-        # self.datagen_60 = ImageDataGenerator(width_shift_range=0.1, height_shift_range=0.1, rotation_range=60)
-        # self.datagen_90 = ImageDataGenerator(width_shift_range=0.1, height_shift_range=0.1, rotation_range=90)
 
         self.datagen = ImageDataGenerator(width_shift_range=0.1, height_shift_range=0.1, rotation_range=10)
         self.build_loss()
@@ -47,7 +43,10 @@ class WGAN():
         self.saver = tf.train.Saver()
 
     def build_loss(self):
-
+        """
+        Calculate loss
+        :return:
+        """
         self.re_loss_real = tf.reduce_mean(tf.reduce_sum(tf.square(tf.reshape(self.sample_points, [self.opts['batch_size'], -1]) - tf.reshape(self.re_sample_points,[self.opts['batch_size'], -1])),axis=1), axis=0)
         self.re_loss = self.re_loss_real
         self.re_loss += tf.reduce_mean(tf.reduce_sum(tf.square(tf.reshape(self.sample_points_r, [self.opts['batch_size'], -1]) - tf.reshape(self.re_sample_points_r,[self.opts['batch_size'], -1])),axis=1), axis=0)
@@ -66,6 +65,7 @@ class WGAN():
         return regularization
 
     def discriminator(self, opts, inputs, reuse=False):
+
         num_units = opts['d_num_filters']
         num_layers = opts['d_num_layers']
 
@@ -77,19 +77,20 @@ class WGAN():
                 hi = tf.nn.relu(hi)
                 hi = tf.nn.dropout(hi, self.keep_prob)
 
+            # ACOL layer
             logit = ops.linear(opts, hi, opts['num_cluster'] + opts['num_cluster'], scope='hfinal_lin')
             pred = tf.nn.softmax(logit)
-            matrix_2 = tf.one_hot(tf.concat((tf.zeros(opts['num_cluster'],dtype=tf.int32), tf.ones(opts['num_cluster'],dtype=tf.int32)), axis=0),2)
-            self.mat2 = matrix_2
+            id_matrix = tf.one_hot(tf.concat((tf.zeros(opts['num_cluster'],dtype=tf.int32), tf.ones(opts['num_cluster'],dtype=tf.int32)), axis=0),2)
+            self.mat2 = id_matrix
 
-            bi_logit = tf.matmul(pred, matrix_2)
+            bi_logit = tf.matmul(pred, id_matrix)
 
         return bi_logit, pred, logit
 
     def gan_penalty(self,opts):
         """
-        gan的目标函数
-        :param opts:配置字典
+        objective function of gan
+        :param opts: configuration dictionary
         :return:
         """
 
@@ -106,11 +107,14 @@ class WGAN():
         D_logit_fake = tf.slice(D_logit_ml, [opts['batch_size'], 0], [opts['batch_size'], -1])
         D_logit_real = tf.slice(D_logit_ml, [0, 0], [opts['batch_size'], -1])
 
-        D_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.one_hot(self.choise_list_1 + opts['num_cluster'], 2 * opts['num_cluster'])))
-        G_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.one_hot(self.choise_list_1, 2 * opts['num_cluster'])))
+        # Cross entropy
+        D_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.one_hot(self.choise_list + opts['num_cluster'], 2 * opts['num_cluster'])))
+        G_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.one_hot(self.choise_list, 2 * opts['num_cluster'])))
 
-        self.data1 = D_logit
+        self.D_logit = D_logit
 
+
+        # Data Augmentation
         D_logit_r, pred_r, D_logit_ml_r = self.discriminator(opts, tf.concat((self.encoded_r, self.sample_noise_1), axis=0),reuse=True)
 
         labels = tf.concat((tf.zeros(opts['batch_size'], dtype=tf.int32), tf.ones(opts['batch_size'], dtype=tf.int32)),axis=0)
@@ -124,19 +128,22 @@ class WGAN():
         D_logit_fake_r = tf.slice(D_logit_ml_r, [opts['batch_size'], 0], [opts['batch_size'], -1])
         D_logit_real_r = tf.slice(D_logit_ml_r, [0, 0], [opts['batch_size'], -1])
 
-        D_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake_r, labels=tf.one_hot(self.choise_list_1 + opts['num_cluster'], 2 * opts['num_cluster'])))
-        G_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake_r, labels=tf.one_hot(self.choise_list_1, 2 * opts['num_cluster'])))
+        # Cross entropy
+        D_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake_r, labels=tf.one_hot(self.choise_list + opts['num_cluster'], 2 * opts['num_cluster'])))
+        G_loss += self.loss_decay * 0.5 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_fake_r, labels=tf.one_hot(self.choise_list, 2 * opts['num_cluster'])))
 
-        real_pred = tf.slice(pred, [0, 0], [opts['batch_size'], -1])
-        real_one_hot = tf.one_hot(tf.argmax(real_pred, axis=1), 2 * opts['num_cluster'])
-        # Dr_loss = self.loss_decay * 1 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=D_logit_real_r, labels=real_one_hot))
         Dr_loss = self.loss_decay * 0.5 * tf.reduce_mean(tf.reduce_sum(tf.square(D_logit_real - D_logit_real_r), axis=1))
         D_loss += Dr_loss
-        # G_loss += Dr_loss
 
         return D_loss , G_loss, pred, D_logit_real,D_logit_fake, tf.maximum(0., D_logit_ml), Dr_loss,  tf.maximum(0., D_logit_ml_r),pred_r
 
     def add_sample(self, choise_list, reuse = False):
+        """
+        Obtaining a Gaussian mixture distribution
+        :param choise_list:
+        :param reuse:
+        :return:
+        """
         opts = self.opts
         label_one_hot = tf.one_hot(choise_list, opts['num_cluster'])
         label_one_hot += tf.random_normal((tf.shape(choise_list)[0], opts['num_cluster']), stddev=0.1)
@@ -169,30 +176,35 @@ class WGAN():
         """
         self.sample_points = tf.placeholder(tf.float32, [None] + self.data_shape, name='real_pts_ph')
         self.sample_points_r = tf.placeholder(tf.float32, [None] + self.data_shape, name='real_pts_ph_r')
-
-        self.choise_list_1 = tf.placeholder(dtype=tf.int32, shape=[None])
+        self.choise_list = tf.placeholder(dtype=tf.int32, shape=[None])
         self.range = tf.placeholder(dtype=tf.int32, shape=[None])
-        self.choise_list_2 = tf.placeholder(dtype=tf.int32, shape=[None])
         self.cond = tf.placeholder(dtype=tf.float32, shape=[None])
         self.lr_decay = tf.placeholder(tf.float32, name='rate_decay_ph')
         self.loss_decay = tf.placeholder(tf.float32, name='loss_decay_ph')
         self.keep_prob = tf.placeholder(tf.float32)
 
-    def leaky_relu(self, features, alpha=0.2, name=None):
-        return tf.maximum(alpha * features, features, name)
-
     def encoder(self, opts, inputs, is_training=True, reuse=False):
+        """
+        Encoding Network
+        :param opts:
+        :param inputs:
+        :param is_training:
+        :param reuse:
+        :return:
+        """
 
-        # if opts['e_noise'] == 'add_noise':
-        #     # Particular instance of the implicit random encoder
-        #     def add_noise(x):
-        #         shape = tf.shape(x)
-        #         return x + tf.truncated_normal(shape, 0.0, 0.01)
-        #
-        #     def do_nothing(x):
-        #         return x
-        #
-        #     inputs = tf.cond(tf.constant(is_training, tf.bool), lambda: add_noise(inputs), lambda: do_nothing(inputs))
+        # Add noise if needed
+        if opts['e_noise'] == 'add_noise':
+
+            def add_noise(x):
+                shape = tf.shape(x)
+                return x + tf.truncated_normal(shape, 0.0, 0.01)
+
+            def do_nothing(x):
+                return x
+
+            inputs = tf.cond(tf.constant(is_training, tf.bool), lambda: add_noise(inputs), lambda: do_nothing(inputs))
+
         num_units = opts['e_num_filters']
         num_layers = opts['e_num_layers']
         layer_x = inputs
@@ -202,8 +214,7 @@ class WGAN():
                 layer_x = ops.conv2d(opts, layer_x, num_units / scale,
                                      scope='h%d_conv' % i)
                 if opts['batch_norm']:
-                    layer_x = ops.batch_norm(opts, layer_x, is_training,
-                                             reuse, scope='h%d_bn' % i)
+                    layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='h%d_bn' % i)
                 layer_x = tf.nn.relu(layer_x)
 
             if opts['GS'] == 'GS':
@@ -234,11 +245,9 @@ class WGAN():
                 scale = 2 ** (i + 1)
                 _out_shape = [opts['batch_size'], height * scale,
                               width * scale, num_units // scale]
-                layer_x = ops.deconv2d(opts, layer_x, _out_shape,
-                                       scope='h%d_deconv' % i)
+                layer_x = ops.deconv2d(opts, layer_x, _out_shape, scope='h%d_deconv' % i)
                 if opts['batch_norm']:
-                    layer_x = ops.batch_norm(opts, layer_x,
-                                             is_training, reuse, scope='h%d_bn' % i)
+                    layer_x = ops.batch_norm(opts, layer_x, is_training, reuse, scope='h%d_bn' % i)
                 layer_x = tf.nn.relu(layer_x)
 
             _out_shape = [opts['batch_size']] + list(output_shape)
@@ -247,15 +256,11 @@ class WGAN():
         return net
 
     def add_optimizers(self):
-        """
-        优化器
-        :return:
-        """
 
         opts = self.opts
         lr = opts['lr']
         lr_adv = opts['lr_adv']
-        # 获取变量
+
         encoder_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='encoder')
         decoder_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='decoder')
         dis_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='discriminator')
@@ -292,48 +297,36 @@ class WGAN():
             imgs = test_image[i * opts['batch_size']:(i + 1) * opts['batch_size'], :]
             labels = test_y[i * opts['batch_size']:(i + 1) * opts['batch_size']]
             imgs = np.reshape(imgs, [-1] + opts['data_shape'])
-            choise_list_1 = [i % (opts['num_cluster'] * opts['range']) for i in range(opts['batch_size'])]
+            choise_list = [i % (opts['num_cluster'] * opts['range']) for i in range(opts['batch_size'])]
 
             feed_d = {
                 self.sample_points: imgs,
-                self.choise_list_1: np.array(choise_list_1),
+                self.choise_list: np.array(choise_list),
                 self.keep_prob: 1
             }
             labels = np.reshape(labels, [-1])
-            imgs1, pred, reloss, imgs2, data1, emd_data, noise, klayer, flayer = self.sess.run(
-                [self.re_sample_points, self.pred, self.re_loss, self.generated, self.data1, self.encoded,
+            imgs1, pred, reloss, imgs2, logit, emd_data, noise, klayer, flayer = self.sess.run(
+                [self.re_sample_points, self.pred, self.re_loss, self.generated, self.D_logit, self.encoded,
                  self.sample_noise_1, self.real_logits, self.fake_logits], feed_dict=feed_d)
             real_pred_1 = np.argmax(pred[:opts['batch_size'], :opts['num_cluster']], axis=1)
-
+            pred_fake = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
+            acc2, _ = utils.cluster_acc(pred_fake, np.array(choise_list))
             if i == 0:
                 klayer_list = klayer
+                pred_real_1 = real_pred_1
+                utils.draw_gan(imgs, imgs1, imgs2, klayer, real_pred_1, labels, np.array(choise_list), flayer,
+                               pred_fake,
+                               0, img_path, opts['name'], num_cluster=opts['batch_size'] // opts['num_cluster'])
             else:
                 klayer_list = np.concatenate((klayer_list, klayer), axis=0)
-
-            real_pred_3 = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
-
-            if i == 0:
-                pred_real_1 = real_pred_1
-            else:
                 pred_real_1 = np.concatenate((pred_real_1, real_pred_1), axis=0)
 
-            fake_pred = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
-            acc2, _ = utils.cluster_acc(fake_pred, np.array(choise_list_1))
-
-            bi_pred = np.argmax(data1, axis=1)
+            bi_pred = np.argmax(logit, axis=1)
             acc3, _ = utils.cluster_acc(bi_pred, np.array(np.concatenate(
                 (np.zeros(opts['batch_size'], dtype=np.int32), np.ones(opts['batch_size'], dtype=np.int32)), axis=0)))
-
             fake_acc_sum += acc2
             bi_acc_sum += acc3
             reloss_sum += reloss
-            if i == 0:
-                pred = np.argmax(pred, axis=1)
-                for i in range(opts['num_cluster'] + opts['num_cluster']):
-                    print(i, ":", pred[pred == i].shape[0])
-                utils.draw_gan(imgs, imgs1, imgs2, klayer, real_pred_1, labels, np.array(choise_list_1), flayer,
-                               real_pred_3,
-                               0, img_path, opts['name'], num_cluster=opts['batch_size'] // opts['num_cluster'])
 
         test_batch_num = (test_image.shape[0] // opts['batch_size'])
         test_y = np.reshape(test_y[:test_image.shape[0] // opts['batch_size'] * opts['batch_size']], [-1])
@@ -366,14 +359,11 @@ class WGAN():
         batches_num = data.train.num_examples // opts['batch_size']
         counter = 0
         decay = 1
-        loss_decay = 1
         reloss_min = 99999
 
         for epoch in range(opts["epoch_num"]):
             if epoch > 0 and epoch % 10 == 0:
                 decay *= 0.9
-            # if epoch > 0 and epoch % 20 == 0:
-            #     loss_decay *= 0.9
             for it in range(batches_num):
                 batch_images, batch_y = data.train.next_batch(opts['batch_size'])
                 batch_images = np.reshape(batch_images, [opts['batch_size']] + opts['data_shape'])
@@ -431,9 +421,8 @@ class WGAN():
         opts = self.opts
         if is_init:
             self.sess.run(self.init)
-            # self.saver.restore(self.sess, pre_model_path)
         else:
-            self.saver.restore(self.sess, acc1_model_path)
+            self.saver.restore(self.sess, pre_model_path)
 
         batches_num = data.train.num_examples // opts['batch_size']
         counter = 0
@@ -449,20 +438,19 @@ class WGAN():
         logwriter.writeheader()
 
         for epoch in range(opts["epoch_num"]):
-            if epoch > 0 and epoch % 20 == 0:
+            if epoch > 0 and epoch % 10 == 0:
                 decay *= 0.9
-            # if epoch > 0 and epoch % 40 == 0:
-            #     loss_decay *= 0.9
+
             for it in range(batches_num):
                 batch_images, batch_y = data.train.next_batch(opts['batch_size'])
                 batch_images = np.reshape(batch_images, [opts['batch_size']] + opts['data_shape'])
-                choise_list_1 = np.random.randint(opts['num_cluster'], size=opts['batch_size'])
+                choise_list = np.random.randint(opts['num_cluster'], size=opts['batch_size'])
                 batch_images_r = self.datagen.flow(batch_images, shuffle=False, batch_size=opts['batch_size']).next()
 
                 feed_d = {
                     self.sample_points: batch_images,
                     self.sample_points_r: batch_images_r,
-                    self.choise_list_1: choise_list_1,
+                    self.choise_list: choise_list,
                     self.lr_decay: decay,
                     self.keep_prob: 0.75,
                     self.loss_decay: loss_decay
@@ -479,67 +467,56 @@ class WGAN():
                     np.random.shuffle(perm)
                     test_image = test_image[perm]
                     test_y = test_y[perm]
-                    acc_sum = 0
-                    acc_1_sum = 0
-                    acc_2_sum = 0
                     fake_acc_sum = 0
                     bi_acc_sum = 0
                     reloss_sum = 0
                     pred_real_1 = np.array([])
-                    pred_real_2 = np.array([])
                     klayer_list = np.array([])
                     for i in range(test_image.shape[0] // opts['batch_size']):
                         imgs = test_image[i * opts['batch_size']:(i + 1) * opts['batch_size'], :]
                         labels = test_y[i * opts['batch_size']:(i + 1) * opts['batch_size']]
                         imgs = np.reshape(imgs, [-1] + opts['data_shape'])
-                        choise_list_1 = [i % opts['num_cluster'] for i in range(opts['batch_size'])]
+                        choise_list = [i % opts['num_cluster'] for i in range(opts['batch_size'])]
 
                         feed_d = {
                             self.sample_points: imgs,
-                            self.choise_list_1: np.array(choise_list_1),
-
+                            self.choise_list: np.array(choise_list),
                             self.lr_decay: decay,
                             self.keep_prob: 1
                         }
                         labels = np.reshape(labels, [-1])
-                        imgs1, pred, reloss, imgs2, data1, emd_data, noise, klayer, flayer = self.sess.run(
-                            [self.re_sample_points, self.pred, self.re_loss_real, self.generated, self.data1, self.encoded,
-                             self.sample_noise_1, self.real_logits,self.fake_logits], feed_dict=feed_d)
+                        imgs1, pred, reloss, imgs2, logit, emd_data, noise, klayer, flayer = self.sess.run(
+                            [self.re_sample_points, self.pred, self.re_loss, self.generated, self.D_logit, self.encoded,
+                             self.sample_noise_1, self.real_logits, self.fake_logits], feed_dict=feed_d)
                         real_pred_1 = np.argmax(pred[:opts['batch_size'], :opts['num_cluster']], axis=1)
-                        # real_pred_2 = KMeans(n_clusters=opts['num_cluster']).fit_predict(klayer)
+                        pred_fake = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
+                        acc2, _ = utils.cluster_acc(pred_fake, np.array(choise_list))
                         if i == 0:
                             klayer_list = klayer
+                            pred_real_1 = real_pred_1
+                            utils.draw_gan(imgs, imgs1, imgs2, klayer, real_pred_1, labels, np.array(choise_list),
+                                           flayer,
+                                           pred_fake,
+                                           0, img_path, opts['name'],
+                                           num_cluster=opts['batch_size'] // opts['num_cluster'])
                         else:
                             klayer_list = np.concatenate((klayer_list, klayer), axis=0)
+                            pred_real_1 = np.concatenate((pred_real_1, real_pred_1), axis=0)
 
-                        real_pred_3 = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
-
-                        if i == 0:
-                            pred_real_1 = real_pred_1
-                        else:
-                            pred_real_1 = np.concatenate((pred_real_1,real_pred_1),axis=0)
-
-                        fake_pred = np.argmax(pred[opts['batch_size']:, opts['num_cluster']:], axis=1)
-                        acc2, _ = utils.cluster_acc(fake_pred, np.array(choise_list_1))
-
-                        bi_pred = np.argmax(data1, axis=1)
-                        acc3, _ = utils.cluster_acc(bi_pred,np.array(np.concatenate((np.zeros(opts['batch_size'], dtype=np.int32),np.ones(opts['batch_size'], dtype=np.int32)),axis=0)))
-
+                        bi_pred = np.argmax(logit, axis=1)
+                        acc3, _ = utils.cluster_acc(bi_pred, np.array(np.concatenate(
+                            (np.zeros(opts['batch_size'], dtype=np.int32), np.ones(opts['batch_size'], dtype=np.int32)),
+                            axis=0)))
                         fake_acc_sum += acc2
                         bi_acc_sum += acc3
                         reloss_sum += reloss
-                        if i == 0:
-                            pred = np.argmax(pred, axis=1)
-                            for i in range(opts['num_cluster']+opts['num_cluster']):
-                                print(i, ":", pred[pred == i].shape[0])
-                            utils.draw_gan(imgs, imgs1, imgs2, klayer, real_pred_1, labels, np.array(choise_list_1), flayer,real_pred_3,
-                                                                  counter, img_path, opts['name'])
+
                     test_batch_num = (test_image.shape[0] // opts['batch_size'])
                     test_y = np.reshape(test_y[:test_image.shape[0] // opts['batch_size'] * opts['batch_size']], [-1])
 
-                    real_pred_2 = KMeans(n_clusters=opts['num_cluster']).fit_predict(klayer_list)
+                    pred_real_2 = KMeans(n_clusters=opts['num_cluster']).fit_predict(klayer_list)
                     acc_1_sum, _ = utils.cluster_acc(pred_real_1,test_y)
-                    acc_2_sum, _ = utils.cluster_acc(real_pred_2, test_y)
+                    acc_2_sum, _ = utils.cluster_acc(pred_real_2, test_y)
                     nmi = metrics.normalized_mutual_info_score(test_y, pred_real_1)
                     ari = metrics.adjusted_rand_score(test_y, pred_real_1)
 

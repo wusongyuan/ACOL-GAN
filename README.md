@@ -13,7 +13,7 @@ The ACOL-GAN algorithm was compared to the most advanced clustering methods. As 
 
 The latent representation of the MNIST data set is visualized by t-SNE[5]. ACOL-GAN can quickly capture the data distribution of the MNIST dataset in the latent space and make the actual data to fit the specified Gaussian mixture for fast clustering. And only 5 epochs are needed to achieve different boundaries in the latent space. 
 
-## Convergence curve
-.<img src="https://github.com/wusongyuan/ACOL-GAN/blob/master/ACOL-GAN/rs_image/acc.png"/>
+## Performance of Different Number to be Clustered
+.<img src="https://github.com/wusongyuan/ACOL-GAN/blob/master/ACOL-GAN/rs_image/k_7&14.png"/>
 
-The clustering accuracy curve of MNIST dataset increases rapidly, reaching more than 90% with just 10 epochs. This shows that the ACOL-GAN model can converge quickly, and the advantages of the k manifold model. Moreover, ACOL-GAN is no need for pre-training and the convergence speed is faster and the accuracy is higher compared with other clustering models. 
+The number of clusters required for the ACOL-GAN model is set 7 and 14 on the MNIST and Fashion-MNIST datasets. In the results of the cluster number set to 7 categories, similar pictures such as the combination of 0 and 6 in MNIST dataset and the combination of the sandals and the sneakers in Fashion-MNIST dataset are grouped together. The result that the number of clusters is set to 14 shows that even in the same class, some differences such as the tilt angle and the shape in the same category can be divided into a plurality of classes. Thus, by observing the experimental results, it can be found that ACOL-GAN can effectively accomplish the task even if the number of clusters is not the number of categories in the real world.
